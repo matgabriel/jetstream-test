@@ -12,8 +12,8 @@ import (
 )
 
 const natsUrl = "localhost:4222"
-const eventCount = 10000 // number of events to send on the stream
-const payloadSize = 1000 // payload size in bytes
+const eventCount = 10000  // number of events to send on the stream
+const payloadSize = 10000 // payload size in bytes
 
 func main() {
 
@@ -25,13 +25,18 @@ func main() {
 	streamName := "someEvents"
 	subject := "events"
 
-	err = recreateStream(mgr, streamName, subject)
+	//names, err := mgr.ConsumerNames(streamName)
+	//panicIf(err)
+	//fmt.Println("consumer names:")
+	//for _, n := range names {
+	//	fmt.Println(n)
+	//}
 
-	id := uuid.NewV4().String()
+	err = recreateStream(mgr, streamName, subject)
 
 	payload := make([]byte, payloadSize)
 	if _, err := rand.Read(payload); err != nil {
-		panicIf(err)
+		panic(err)
 	}
 
 	start := time.Now()
@@ -43,21 +48,29 @@ func main() {
 	fmt.Printf("\n%d messages sent in %d ms\n", eventCount, time.Since(start).Milliseconds())
 	time.Sleep(1 * time.Second)
 
+	consumerId := uuid.NewV4().String()
 	start = time.Now()
-	consumer, err := mgr.LoadOrNewConsumer(streamName, id, jsm.DurableName(id), jsm.AcknowledgeExplicit())
+	consumer, err := mgr.LoadOrNewConsumer(streamName, consumerId,
+		jsm.DurableName(consumerId),
+		jsm.AcknowledgeExplicit(),
+		jsm.ReplayInstantly())
 	panicIf(err)
-	defer panicIf(consumer.Delete())
+	defer func() { panicIf(consumer.Delete()) }()
 
 	i := 0
 	for {
 		m, err := consumer.NextMsg()
 		panicIf(err)
 		i++
-		fmt.Println(i)
+
+		md, err := m.JetStreamMetaData()
+		panicIf(err)
+
+		fmt.Println(i, "metadata", md.ConsumerSeq, "/", md.StreamSeq, "/", md.Pending)
 		if i == eventCount {
 			break
 		}
-		err = m.Respond(nil)
+		err = m.Ack()
 		panicIf(err)
 	}
 
@@ -71,6 +84,7 @@ func recreateStream(mgr *jsm.Manager, streamName string, subject string) error {
 	panicIf(stream.Delete())
 	stream, err = mgr.LoadOrNewStream(streamName, jsm.Subjects(subject), jsm.MaxAge(24*time.Hour), jsm.FileStorage())
 	panicIf(err)
+	fmt.Println("Stream created:", stream.Name())
 	return err
 }
 

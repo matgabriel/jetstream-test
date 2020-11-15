@@ -67,7 +67,7 @@ func main() {
 		jsm.AcknowledgeAll(),
 	)
 	panicIf(err)
-	defer panicIf(consumer.Delete())
+	defer func() { panicIf(consumer.Delete()) }()
 
 	<-doneChan
 	fmt.Printf("\n%d messages received in %d ms\n", eventCount, time.Since(start).Milliseconds())
